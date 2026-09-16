@@ -92,7 +92,7 @@ function App() {
     <main>
       <aside className="welcome-panel" aria-label="Bienvenida">
         <div className="eyebrow"><span /> MÁS CERCA DE TU BIENESTAR</div>
-        <h1>Tu cuidado<br />empieza con<br /><em>un encuentro.</em></h1>
+        <h1>Tu cuidado <br />empieza con <br /><em>un encuentro.</em></h1>
         <p className="intro">Un espacio para conectar con tu atención y dar el siguiente paso con tranquilidad.</p>
         <div className="illustration" aria-hidden="true">
           <div className="orbit orbit-one" /><div className="orbit orbit-two" />
