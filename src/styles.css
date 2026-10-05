@@ -648,6 +648,106 @@ footer {
   margin-top: auto;
 }
 
+/* S4 Styles: Password Reset, Affiliations, Reschedules, Catalogs */
+.forgot-link-btn {
+  background: none;
+  border: none;
+  color: var(--primary-light);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 6px;
+  display: inline-block;
+  font-weight: 500;
+}
+.forgot-link-btn:hover {
+  color: var(--primary);
+}
+
+.profile-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+}
+.profile-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.profile-field label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
+}
+.profile-field div {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.catalog-section {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  margin-bottom: 24px;
+}
+.catalog-section h3 {
+  margin-top: 0;
+  margin-bottom: 14px;
+  font-size: 16px;
+  color: var(--primary);
+}
+
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+.catalog-table th, .catalog-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid #edf2eb;
+}
+.catalog-table th {
+  background: #f8faf6;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+.catalog-table tr:hover td {
+  background: #fdfefe;
+}
+
+.badge-active {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #e2f4d8;
+  color: #265d21;
+}
+.badge-inactive {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 @media (max-width: 860px) {
   .auth-main { grid-template-columns: 1fr; border-radius: 18px; }
   .welcome-panel { padding: 32px 24px; }

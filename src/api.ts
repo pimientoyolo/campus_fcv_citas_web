@@ -98,6 +98,67 @@ export interface AvailabilityBlock {
   active: boolean;
 }
 
+export interface Regimen {
+  id: number;
+  code: string;
+  name: string;
+  active: boolean;
+}
+
+export interface Eps {
+  id: number;
+  code: string;
+  name: string;
+  active: boolean;
+}
+
+export interface EpsPlan {
+  id: number;
+  epsId: number;
+  code: string;
+  name: string;
+  active: boolean;
+}
+
+export interface UserAffiliation {
+  id: number;
+  userId: number;
+  epsId: number;
+  epsName: string;
+  epsPlanId: number;
+  epsPlanName: string;
+  regimenId: number;
+  regimenName: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface UserProfile {
+  id: number;
+  firstName: string;
+  lastName: string;
+  documentType: string;
+  documentNumber: string;
+  email: string;
+  phone: string;
+  affiliations: UserAffiliation[];
+}
+
+export interface AppointmentReschedule {
+  id: number;
+  appointmentId: number;
+  requestedByUserId: number;
+  oldStartAt: string;
+  newStartAt: string;
+  newEndAt: string;
+  statusId: number;
+  statusCode: string;
+  reason: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
     super(message);
@@ -225,4 +286,49 @@ export const api = {
   ) => request<AvailabilityBlock>(`/api/professionals/${professionalId}/blocks`, 'POST', data, token),
   deleteBlock: (professionalId: number, blockId: number, token: string) =>
     request<void>(`/api/professionals/${professionalId}/blocks/${blockId}`, 'DELETE', undefined, token),
+
+  // Recuperación de Contraseña (RF-03)
+  requestPasswordReset: (email: string) =>
+    request<{ message: string; resetToken?: string }>('/api/auth/password-reset/request', 'POST', { email }),
+  confirmPasswordReset: (token: string, newPassword: string) =>
+    request<{ message: string }>('/api/auth/password-reset/confirm', 'POST', { token, newPassword }),
+
+  // Perfil y Afiliaciones (RF-04)
+  getProfile: (token: string) => request<UserProfile>('/api/users/profile', 'GET', undefined, token),
+  updateProfile: (data: { firstName: string; lastName: string; phone: string }, token: string) =>
+    request<UserProfile>('/api/users/profile', 'PUT', data, token),
+  getAffiliations: (token: string) => request<UserAffiliation[]>('/api/users/affiliations', 'GET', undefined, token),
+  createAffiliation: (data: { epsId: number; epsPlanId: number; regimenId: number }, token: string) =>
+    request<UserAffiliation>('/api/users/affiliations', 'POST', data, token),
+  deleteAffiliation: (id: number, token: string) =>
+    request<void>(`/api/users/affiliations/${id}`, 'DELETE', undefined, token),
+
+  // Catálogos Configurables (RF-06)
+  regimens: () => request<Regimen[]>('/api/catalogs/regimens'),
+  epsList: () => request<Eps[]>('/api/catalogs/eps'),
+  epsPlans: (epsId: number) => request<EpsPlan[]>(`/api/catalogs/eps/${epsId}/plans`),
+  createEps: (data: { code: string; name: string }, token: string) =>
+    request<Eps>('/api/admin/catalogs/eps', 'POST', data, token),
+  updateEps: (id: number, data: { code?: string; name?: string; active?: boolean }, token: string) =>
+    request<Eps>(`/api/admin/catalogs/eps/${id}`, 'PUT', data, token),
+  toggleEpsActive: (id: number, active: boolean, token: string) =>
+    request<Eps>(`/api/admin/catalogs/eps/${id}/active`, 'PATCH', { active }, token),
+  createEpsPlan: (epsId: number, data: { code: string; name: string }, token: string) =>
+    request<EpsPlan>(`/api/admin/catalogs/eps/${epsId}/plans`, 'POST', data, token),
+  createSpecialty: (
+    data: { code: string; name: string; appointmentDurationMinutes: number; isGeneral?: boolean; requiresAdminApproval?: boolean },
+    token: string
+  ) => request<Specialty>('/api/admin/catalogs/specialties', 'POST', data, token),
+  toggleSpecialtyActive: (id: number, active: boolean, token: string) =>
+    request<Specialty>(`/api/admin/catalogs/specialties/${id}/active`, 'PATCH', { active }, token),
+
+  // Reprogramación de Citas (RF-15, RF-18)
+  rescheduleAppointment: (id: number, data: { newStartAt: string; reason: string }, token: string) =>
+    request<AppointmentReschedule>(`/api/appointments/${id}/reschedule`, 'POST', data, token),
+  pendingReschedules: (token: string) =>
+    request<AppointmentReschedule[]>('/api/admin/reschedules/pending', 'GET', undefined, token),
+  approveReschedule: (id: number, token: string) =>
+    request<AppointmentReschedule>(`/api/admin/reschedules/${id}/approve`, 'PATCH', {}, token),
+  rejectReschedule: (id: number, rejectionReason: string, token: string) =>
+    request<AppointmentReschedule>(`/api/admin/reschedules/${id}/reject`, 'PATCH', { rejectionReason }, token),
 };

@@ -12,6 +12,12 @@ import type {
   Session,
   Specialty,
   AvailabilityBlock,
+  UserProfile,
+  UserAffiliation,
+  AppointmentReschedule,
+  Regimen,
+  Eps,
+  EpsPlan,
 } from './api';
 import './styles.css';
 
@@ -25,7 +31,16 @@ const emptyReg: Registration = {
   password: '',
 };
 
-type PortalTab = 'book' | 'my-appointments' | 'admin-appointments' | 'prof-agenda' | 'prof-blocks' | 'professionals';
+type PortalTab =
+  | 'book'
+  | 'my-appointments'
+  | 'profile'
+  | 'admin-appointments'
+  | 'admin-reschedules'
+  | 'admin-catalogs'
+  | 'prof-agenda'
+  | 'prof-blocks'
+  | 'professionals';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -53,12 +68,12 @@ function App() {
   // Estado de Agendamiento
   const [bookLocationId, setBookLocationId] = useState<number>(1);
   const [bookSpecialtyId, setBookSpecialtyId] = useState<number>(1);
-  const [bookProfessionalId, setBookProfessionalId] = useState<number>(0); // 0 = cualquier profesional
+  const [bookProfessionalId, setBookProfessionalId] = useState<number>(0);
   const [bookDate, setBookDate] = useState<string>('2026-10-01');
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
 
-  // Modal Rechazo Admin
+  // Modal Rechazo Admin Citas
   const [rejectModalAppId, setRejectModalAppId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState<string>('');
 
@@ -82,6 +97,48 @@ function App() {
   const [newProfLicense, setNewProfLicense] = useState('');
   const [newProfSpecialtyIds, setNewProfSpecialtyIds] = useState<number[]>([]);
   const [newProfLocationIds, setNewProfLocationIds] = useState<number[]>([1, 2]);
+
+  // S4: Recuperación de Contraseña (RF-03, HU-007)
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [resetStep, setResetStep] = useState<1 | 2>(1);
+
+  // S4: Perfil y Afiliaciones (RF-04, HU-008)
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [affiliations, setAffiliations] = useState<UserAffiliation[]>([]);
+  const [editPhone, setEditPhone] = useState('');
+  const [regimensList, setRegimensList] = useState<Regimen[]>([]);
+  const [epsList, setEpsList] = useState<Eps[]>([]);
+  const [epsPlansList, setEpsPlansList] = useState<EpsPlan[]>([]);
+  const [newAffRegimenId, setNewAffRegimenId] = useState<number>(1);
+  const [newAffEpsId, setNewAffEpsId] = useState<number>(1);
+  const [newAffPlanId, setNewAffPlanId] = useState<number>(1);
+
+  // S4: Reprogramación de Citas (RF-15, HU-009)
+  const [rescheduleModalApp, setRescheduleModalApp] = useState<Appointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('2026-10-10');
+  const [rescheduleTime, setRescheduleTime] = useState('09:00');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+
+  // S4: Bandeja de Reprogramaciones Admin (RF-18, HU-009)
+  const [pendingReschedules, setPendingReschedules] = useState<AppointmentReschedule[]>([]);
+  const [rejectRescheduleId, setRejectRescheduleId] = useState<number | null>(null);
+  const [rescheduleRejectReason, setRescheduleRejectReason] = useState('');
+
+  // S4: Catálogos Configurables (RF-06, HU-010)
+  const [adminEpsList, setAdminEpsList] = useState<Eps[]>([]);
+  const [selectedAdminEpsId, setSelectedAdminEpsId] = useState<number>(1);
+  const [adminPlansList, setAdminPlansList] = useState<EpsPlan[]>([]);
+  const [newEpsCode, setNewEpsCode] = useState('');
+  const [newEpsName, setNewEpsName] = useState('');
+  const [newPlanCode, setNewPlanCode] = useState('');
+  const [newPlanName, setNewPlanName] = useState('');
+  const [newSpecCode, setNewSpecCode] = useState('');
+  const [newSpecName, setNewSpecName] = useState('');
+  const [newSpecDuration, setNewSpecDuration] = useState(30);
+  const [newSpecIsGeneral, setNewSpecIsGeneral] = useState(false);
 
   const sessionRef = useRef<Session | null>(null);
   const renewing = useRef<Promise<Session> | null>(null);
@@ -140,6 +197,12 @@ function App() {
       loadProfBlocks();
     } else if (tab === 'professionals') {
       void api.professionals().then(setProfessionalsList).catch(() => {});
+    } else if (tab === 'profile') {
+      loadProfileAndAffiliations();
+    } else if (tab === 'admin-reschedules') {
+      loadPendingReschedules();
+    } else if (tab === 'admin-catalogs') {
+      loadAdminCatalogs();
     }
   }, [tab, session, profDate]);
 
@@ -175,6 +238,61 @@ function App() {
     }
   }
 
+  function loadProfileAndAffiliations() {
+    if (!session) return;
+    api.getProfile(session.accessToken)
+      .then(p => {
+        setProfile(p);
+        setEditPhone(p.phone);
+      })
+      .catch(() => {});
+    api.getAffiliations(session.accessToken)
+      .then(setAffiliations)
+      .catch(() => {});
+    api.regimens().then(setRegimensList).catch(() => {});
+    api.epsList().then(list => {
+      setEpsList(list);
+      if (list.length > 0) {
+        setNewAffEpsId(list[0].id);
+        api.epsPlans(list[0].id).then(plans => {
+          setEpsPlansList(plans);
+          if (plans.length > 0) setNewAffPlanId(plans[0].id);
+        }).catch(() => {});
+      }
+    }).catch(() => {});
+  }
+
+  function onSelectAffEps(epsId: number) {
+    setNewAffEpsId(epsId);
+    api.epsPlans(epsId).then(plans => {
+      setEpsPlansList(plans);
+      if (plans.length > 0) setNewAffPlanId(plans[0].id);
+    }).catch(() => {});
+  }
+
+  function loadPendingReschedules() {
+    if (!session) return;
+    api.pendingReschedules(session.accessToken)
+      .then(setPendingReschedules)
+      .catch(err => setError(err.message));
+  }
+
+  function loadAdminCatalogs() {
+    api.epsList().then(list => {
+      setAdminEpsList(list);
+      if (list.length > 0) {
+        setSelectedAdminEpsId(list[0].id);
+        api.epsPlans(list[0].id).then(setAdminPlansList).catch(() => {});
+      }
+    }).catch(() => {});
+    api.specialties().then(setSpecialties).catch(() => {});
+  }
+
+  function onSelectAdminEps(epsId: number) {
+    setSelectedAdminEpsId(epsId);
+    api.epsPlans(epsId).then(setAdminPlansList).catch(() => {});
+  }
+
   function changeMode(next: 'login' | 'register') {
     setMode(next);
     setError('');
@@ -194,6 +312,9 @@ function App() {
       setSession(next);
       setFields(val => ({ ...val, password: '' }));
       setNotice(`¡Bienvenido(a), ${next.user.firstName}! Sesión iniciada con éxito.`);
+      if (next.user.roles.includes('ADMIN')) setTab('admin-appointments');
+      else if (next.user.roles.includes('PROFESSIONAL')) setTab('prof-agenda');
+      else setTab('book');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión.');
       setNotice('');
@@ -219,7 +340,6 @@ function App() {
         await api.me(next.accessToken);
         remember(next);
         setFields(emptyReg);
-        // Cargar profesionales de inmediato
         void api.professionals().then(setProfessionalsList);
         if (next.user.roles.includes('ADMIN')) setTab('admin-appointments');
         else if (next.user.roles.includes('PROFESSIONAL')) setTab('prof-agenda');
@@ -314,7 +434,7 @@ function App() {
     }
   }
 
-  // --- Operaciones de Admin ---
+  // --- Operaciones de Admin Citas ---
   async function approveApp(appId: number) {
     if (!session) return;
     setBusy(true);
@@ -464,6 +584,246 @@ function App() {
     }
   }
 
+  // --- S4: Recuperación de Contraseña ---
+  async function handleRequestReset(e: FormEvent) {
+    e.preventDefault();
+    if (!resetEmail.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api.requestPasswordReset(resetEmail.trim().toLowerCase());
+      setNotice(res.message);
+      if (res.resetToken) {
+        setResetToken(res.resetToken);
+      }
+      setResetStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al solicitar restablecimiento.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirmReset(e: FormEvent) {
+    e.preventDefault();
+    if (!resetToken.trim() || !newResetPassword) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api.confirmPasswordReset(resetToken.trim(), newResetPassword);
+      setNotice(res.message + ' ¡Ya puedes iniciar sesión!');
+      setShowResetModal(false);
+      setResetEmail('');
+      setResetToken('');
+      setNewResetPassword('');
+      setResetStep(1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al restablecer contraseña.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --- S4: Perfil y Afiliaciones ---
+  async function handleUpdatePhone(e: FormEvent) {
+    e.preventDefault();
+    if (!session || !profile) return;
+    setBusy(true);
+    setError('');
+    try {
+      const updated = await api.updateProfile({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phone: editPhone.trim(),
+      }, session.accessToken);
+      setProfile(updated);
+      setNotice('Teléfono actualizado exitosamente.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al actualizar teléfono.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateAffiliation(e: FormEvent) {
+    e.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.createAffiliation({
+        epsId: newAffEpsId,
+        epsPlanId: newAffPlanId,
+        regimenId: newAffRegimenId,
+      }, session.accessToken);
+      setNotice('Afiliación de salud registrada exitosamente.');
+      loadProfileAndAffiliations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al vincular afiliación.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteAffiliation(affId: number) {
+    if (!session || !confirm('¿Eliminar esta afiliación?')) return;
+    setBusy(true);
+    try {
+      await api.deleteAffiliation(affId, session.accessToken);
+      setNotice('Afiliación eliminada.');
+      loadProfileAndAffiliations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al eliminar afiliación.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --- S4: Reprogramaciones ---
+  async function handleSendReschedule(e: FormEvent) {
+    e.preventDefault();
+    if (!session || !rescheduleModalApp) return;
+    const newStartAt = `${rescheduleDate}T${rescheduleTime}:00`;
+    setBusy(true);
+    setError('');
+    try {
+      await api.rescheduleAppointment(rescheduleModalApp.id, {
+        newStartAt,
+        reason: rescheduleReason.trim(),
+      }, session.accessToken);
+      setNotice('Solicitud de reprogramación registrada con éxito. Queda en estado PENDING y será revisada por Administración.');
+      setRescheduleModalApp(null);
+      setRescheduleReason('');
+      loadMyAppointments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al solicitar reprogramación.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleApproveReschedule(resId: number) {
+    if (!session) return;
+    setBusy(true);
+    try {
+      await api.approveReschedule(resId, session.accessToken);
+      setNotice('Reprogramación aprobada y fecha de la cita actualizada exitosamente.');
+      loadPendingReschedules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al aprobar reprogramación.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRejectReschedule() {
+    if (!session || !rejectRescheduleId) return;
+    if (!rescheduleRejectReason.trim()) {
+      setError('Debes especificar un motivo para rechazar la reprogramación.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.rejectReschedule(rejectRescheduleId, rescheduleRejectReason.trim(), session.accessToken);
+      setNotice('Solicitud de reprogramación rechazada. La cita original se mantiene.');
+      setRejectRescheduleId(null);
+      setRescheduleRejectReason('');
+      loadPendingReschedules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al rechazar reprogramación.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --- S4: Gestión de Catálogos (Admin) ---
+  async function handleCreateEps(e: FormEvent) {
+    e.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    try {
+      await api.createEps({ code: newEpsCode.trim(), name: newEpsName.trim() }, session.accessToken);
+      setNotice('EPS creada exitosamente.');
+      setNewEpsCode('');
+      setNewEpsName('');
+      loadAdminCatalogs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al crear EPS.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleToggleEps(eps: Eps) {
+    if (!session) return;
+    setBusy(true);
+    try {
+      await api.toggleEpsActive(eps.id, !eps.active, session.accessToken);
+      setNotice(`EPS ${eps.name} ${!eps.active ? 'activada' : 'desactivada'}.`);
+      loadAdminCatalogs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al alternar estado de EPS.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreatePlan(e: FormEvent) {
+    e.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    try {
+      await api.createEpsPlan(selectedAdminEpsId, { code: newPlanCode.trim(), name: newPlanName.trim() }, session.accessToken);
+      setNotice('Plan EPS creado exitosamente.');
+      setNewPlanCode('');
+      setNewPlanName('');
+      api.epsPlans(selectedAdminEpsId).then(setAdminPlansList);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al crear Plan.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateSpecialty(e: FormEvent) {
+    e.preventDefault();
+    if (!session) return;
+    setBusy(true);
+    try {
+      await api.createSpecialty({
+        code: newSpecCode.trim(),
+        name: newSpecName.trim(),
+        appointmentDurationMinutes: Number(newSpecDuration),
+        isGeneral: newSpecIsGeneral,
+        requiresAdminApproval: !newSpecIsGeneral,
+      }, session.accessToken);
+      setNotice('Especialidad creada exitosamente.');
+      setNewSpecCode('');
+      setNewSpecName('');
+      setNewSpecDuration(30);
+      setNewSpecIsGeneral(false);
+      loadCatalogs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al crear Especialidad.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleToggleSpecialty(spec: Specialty) {
+    if (!session) return;
+    setBusy(true);
+    try {
+      await api.toggleSpecialtyActive(spec.id, !spec.active, session.accessToken);
+      setNotice(`Especialidad ${spec.name} ${!spec.active ? 'activada' : 'desactivada'}.`);
+      loadCatalogs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al alternar estado de Especialidad.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const selectedSpecObj = specialties.find(s => s.id === bookSpecialtyId);
   const matchingProfs = professionalsList.filter(p => p.specialties.some(s => s.id === bookSpecialtyId));
   const isAdmin = session?.user.roles.includes('ADMIN');
@@ -501,7 +861,7 @@ function App() {
             </button>
           </div>
         ) : (
-          <span className="lab-badge"><span /> Entorno FCV Citas S3</span>
+          <span className="lab-badge"><span /> Entorno FCV Citas S4</span>
         )}
       </header>
 
@@ -705,6 +1065,18 @@ function App() {
                     </button>
                   </div>
 
+                  {mode === 'login' && (
+                    <div style={{ textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        className="forgot-link-btn"
+                        onClick={() => { setShowResetModal(true); setResetStep(1); setError(''); }}
+                      >
+                        ¿Olvidaste tu contraseña? (RF-03)
+                      </button>
+                    </div>
+                  )}
+
                   <button className="primary-button" type="submit" disabled={busy}>
                     {busy ? 'Procesando…' : mode === 'login' ? 'Entrar a mi portal' : 'Completar registro'}
                     <span>↗</span>
@@ -731,14 +1103,34 @@ function App() {
             >
               📋 Mis Citas {myAppointments.length > 0 && <span className="tab-badge">{myAppointments.length}</span>}
             </button>
+            <button
+              className={`tab-btn ${tab === 'profile' ? 'active' : ''}`}
+              onClick={() => { setTab('profile'); setError(''); setNotice(''); }}
+            >
+              👤 Mi Perfil y EPS
+            </button>
 
             {isAdmin && (
-              <button
-                className={`tab-btn ${tab === 'admin-appointments' ? 'active' : ''}`}
-                onClick={() => { setTab('admin-appointments'); setError(''); setNotice(''); }}
-              >
-                🛡️ Bandeja Admin {adminAppointments.length > 0 && <span className="tab-badge">{adminAppointments.length}</span>}
-              </button>
+              <>
+                <button
+                  className={`tab-btn ${tab === 'admin-appointments' ? 'active' : ''}`}
+                  onClick={() => { setTab('admin-appointments'); setError(''); setNotice(''); }}
+                >
+                  🛡️ Bandeja Citas {adminAppointments.length > 0 && <span className="tab-badge">{adminAppointments.length}</span>}
+                </button>
+                <button
+                  className={`tab-btn ${tab === 'admin-reschedules' ? 'active' : ''}`}
+                  onClick={() => { setTab('admin-reschedules'); setError(''); setNotice(''); }}
+                >
+                  🔄 Reprogramaciones {pendingReschedules.length > 0 && <span className="tab-badge">{pendingReschedules.length}</span>}
+                </button>
+                <button
+                  className={`tab-btn ${tab === 'admin-catalogs' ? 'active' : ''}`}
+                  onClick={() => { setTab('admin-catalogs'); setError(''); setNotice(''); }}
+                >
+                  ⚙️ Catálogos
+                </button>
+              </>
             )}
 
             {isProf && (
@@ -963,6 +1355,17 @@ function App() {
                           <div className="card-actions">
                             <button
                               type="button"
+                              className="btn-sm btn-secondary"
+                              onClick={() => {
+                                setRescheduleModalApp(app);
+                                setRescheduleReason('');
+                              }}
+                              disabled={busy}
+                            >
+                              🔄 Reprogramar (RF-15)
+                            </button>
+                            <button
+                              type="button"
                               className="btn-sm btn-danger-outline"
                               onClick={() => void cancelApp(app.id)}
                               disabled={busy}
@@ -978,7 +1381,141 @@ function App() {
               </div>
             )}
 
-            {/* 3. BANDEJA ADMIN */}
+            {/* 3. MI PERFIL Y AFILIACIONES (RF-04, HU-008) */}
+            {tab === 'profile' && (
+              <div>
+                <div className="portal-header">
+                  <h2>Mi Perfil y Afiliación de Salud</h2>
+                  <p>Administra tus datos personales y tus vinculaciones a EPS y regímenes (RF-04).</p>
+                </div>
+
+                {profile && (
+                  <div className="profile-card">
+                    <h3>Datos Personales</h3>
+                    <div className="profile-row">
+                      <div className="profile-field">
+                        <label>Nombre Completo</label>
+                        <div>{profile.firstName} {profile.lastName}</div>
+                      </div>
+                      <div className="profile-field">
+                        <label>Documento de Identidad</label>
+                        <div>{profile.documentType} {profile.documentNumber}</div>
+                      </div>
+                      <div className="profile-field">
+                        <label>Correo Electrónico</label>
+                        <div>{profile.email}</div>
+                      </div>
+                    </div>
+
+                    <form onSubmit={e => void handleUpdatePhone(e)} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', maxWidth: '400px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>
+                          Teléfono de Contacto
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          value={editPhone}
+                          onChange={e => setEditPhone(e.target.value)}
+                        />
+                      </div>
+                      <button type="submit" className="btn-sm btn-approve" style={{ padding: '10px 16px' }} disabled={busy}>
+                        Guardar Teléfono
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                <div className="catalog-section">
+                  <h3>Mis Afiliaciones de Salud Activas ({affiliations.length})</h3>
+                  {affiliations.length === 0 ? (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                      No tienes afiliaciones registradas. Vincula tu EPS y Plan a continuación.
+                    </p>
+                  ) : (
+                    <table className="catalog-table">
+                      <thead>
+                        <tr>
+                          <th>Régimen</th>
+                          <th>EPS</th>
+                          <th>Plan</th>
+                          <th>Estado</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {affiliations.map(aff => (
+                          <tr key={aff.id}>
+                            <td><strong>{aff.regimenName}</strong></td>
+                            <td>{aff.epsName}</td>
+                            <td>{aff.epsPlanName}</td>
+                            <td><span className="badge-active">ACTIVA</span></td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn-sm btn-danger-outline"
+                                onClick={() => void handleDeleteAffiliation(aff.id)}
+                              >
+                                Desvincular
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  <hr style={{ margin: '24px 0', border: 'none', borderTop: '1px solid #edf2eb' }} />
+
+                  <h4>+ Vincular Nueva Afiliación</h4>
+                  <form onSubmit={e => void handleCreateAffiliation(e)} className="booking-form-grid" style={{ marginBottom: 0 }}>
+                    <div>
+                      <label>Régimen</label>
+                      <select
+                        value={newAffRegimenId}
+                        onChange={e => setNewAffRegimenId(Number(e.target.value))}
+                      >
+                        {regimensList.map(r => (
+                          <option key={r.id} value={r.id}>{r.name} ({r.code})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label>Entidad EPS</label>
+                      <select
+                        value={newAffEpsId}
+                        onChange={e => onSelectAffEps(Number(e.target.value))}
+                      >
+                        {epsList.map(eps => (
+                          <option key={eps.id} value={eps.id}>{eps.name} ({eps.code})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label>Plan de Salud</label>
+                      <select
+                        value={newAffPlanId}
+                        onChange={e => setNewAffPlanId(Number(e.target.value))}
+                      >
+                        {epsPlansList.map(p => (
+                          <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button type="submit" className="primary-button" style={{ margin: 0 }} disabled={busy}>
+                        + Vincular Afiliación
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* 4. BANDEJA ADMIN CITAS */}
             {tab === 'admin-appointments' && isAdmin && (
               <div>
                 <div className="portal-header">
@@ -1064,7 +1601,273 @@ function App() {
               </div>
             )}
 
-            {/* 4. AGENDA PROFESIONAL */}
+            {/* 5. BANDEJA ADMIN REPROGRAMACIONES (RF-18, HU-009) */}
+            {tab === 'admin-reschedules' && isAdmin && (
+              <div>
+                <div className="portal-header">
+                  <h2>Gestión de Solicitudes de Reprogramación</h2>
+                  <p>Evalúa las solicitudes de cambio de horario presentadas por los pacientes (RF-18).</p>
+                </div>
+
+                {pendingReschedules.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-icon">✓</div>
+                    <h3>No hay reprogramaciones pendientes</h3>
+                    <p>Todas las solicitudes han sido resueltas oportunamente.</p>
+                  </div>
+                ) : (
+                  <div className="cards-grid">
+                    {pendingReschedules.map(res => (
+                      <div key={res.id} className="appointment-card-item">
+                        <div className="card-top">
+                          <div>
+                            <div className="card-spec">Cita ID: #{res.appointmentId}</div>
+                            <div className="card-prof">Solicitado por Paciente ID: #{res.requestedByUserId}</div>
+                          </div>
+                          <span className="status-chip requested">PENDING</span>
+                        </div>
+
+                        <div className="card-time" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                          <div>Horario Actual: <s>{res.oldStartAt.replace('T', ' ')}</s></div>
+                          <div>Nuevo Horario Solicitado: <strong>{res.newStartAt.replace('T', ' ')}</strong></div>
+                        </div>
+
+                        <div style={{ fontSize: '13px', background: '#f8faf6', padding: '8px 12px', borderRadius: '6px' }}>
+                          <strong>Motivo:</strong> {res.reason}
+                        </div>
+
+                        <div className="card-actions">
+                          <button
+                            type="button"
+                            className="btn-sm btn-reject"
+                            onClick={() => { setRejectRescheduleId(res.id); setRescheduleRejectReason(''); }}
+                            disabled={busy}
+                          >
+                            Rechazar
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-sm btn-approve"
+                            onClick={() => void handleApproveReschedule(res.id)}
+                            disabled={busy}
+                          >
+                            ✓ Aprobar Reprogramación
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 6. ADMIN CATÁLOGOS CONFIGURABLES (RF-06, HU-010) */}
+            {tab === 'admin-catalogs' && isAdmin && (
+              <div>
+                <div className="portal-header">
+                  <h2>Catálogos Configurables del Sistema</h2>
+                  <p>Administración y parametrización de Entidades EPS, Planes de Atención y Especialidades Médicas (RF-06).</p>
+                </div>
+
+                {/* Subsección EPS y Planes */}
+                <div className="catalog-section">
+                  <h3>1. Entidades EPS</h3>
+                  <table className="catalog-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Código</th>
+                        <th>Nombre de la Entidad</th>
+                        <th>Estado</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminEpsList.map(eps => (
+                        <tr key={eps.id} style={{ background: selectedAdminEpsId === eps.id ? '#f0f9eb' : 'transparent' }}>
+                          <td>#{eps.id}</td>
+                          <td><code>{eps.code}</code></td>
+                          <td><strong>{eps.name}</strong></td>
+                          <td>
+                            <span className={eps.active ? 'badge-active' : 'badge-inactive'}>
+                              {eps.active ? 'ACTIVO' : 'INACTIVO'}
+                            </span>
+                          </td>
+                          <td style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              className="btn-sm btn-secondary"
+                              onClick={() => onSelectAdminEps(eps.id)}
+                            >
+                              Ver Planes
+                            </button>
+                            <button
+                              type="button"
+                              className={`btn-sm ${eps.active ? 'btn-danger-outline' : 'btn-approve'}`}
+                              onClick={() => void handleToggleEps(eps)}
+                            >
+                              {eps.active ? 'Desactivar' : 'Activar'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h4 style={{ marginTop: '20px' }}>+ Registrar Nueva Entidad EPS</h4>
+                  <form onSubmit={e => void handleCreateEps(e)} className="booking-form-grid">
+                    <div>
+                      <label>Código EPS (ej: EPS-SURA)</label>
+                      <input required value={newEpsCode} onChange={e => setNewEpsCode(e.target.value)} placeholder="EPS-NUEVA" />
+                    </div>
+                    <div>
+                      <label>Nombre de la EPS</label>
+                      <input required value={newEpsName} onChange={e => setNewEpsName(e.target.value)} placeholder="EPS Salud Total" />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button type="submit" className="primary-button" style={{ margin: 0 }} disabled={busy}>
+                        + Crear EPS
+                      </button>
+                    </div>
+                  </form>
+
+                  <hr style={{ margin: '24px 0', border: 'none', borderTop: '1px solid #edf2eb' }} />
+
+                  <h3>2. Planes de Salud para: {adminEpsList.find(e => e.id === selectedAdminEpsId)?.name || 'Selecciona una EPS'}</h3>
+                  <table className="catalog-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Código Plan</th>
+                        <th>Nombre del Plan</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminPlansList.map(plan => (
+                        <tr key={plan.id}>
+                          <td>#{plan.id}</td>
+                          <td><code>{plan.code}</code></td>
+                          <td>{plan.name}</td>
+                          <td><span className="badge-active">ACTIVO</span></td>
+                        </tr>
+                      ))}
+                      {adminPlansList.length === 0 && (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: 'center', color: '#64756e' }}>No hay planes registrados para esta EPS.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+
+                  <h4 style={{ marginTop: '20px' }}>+ Agregar Plan a esta EPS</h4>
+                  <form onSubmit={e => void handleCreatePlan(e)} className="booking-form-grid">
+                    <div>
+                      <label>Código del Plan</label>
+                      <input required value={newPlanCode} onChange={e => setNewPlanCode(e.target.value)} placeholder="PLAN-PREF" />
+                    </div>
+                    <div>
+                      <label>Nombre del Plan</label>
+                      <input required value={newPlanName} onChange={e => setNewPlanName(e.target.value)} placeholder="Plan Preferencial Plus" />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button type="submit" className="primary-button" style={{ margin: 0 }} disabled={busy}>
+                        + Crear Plan
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Subsección Especialidades */}
+                <div className="catalog-section">
+                  <h3>3. Especialidades Médicas Configurables</h3>
+                  <table className="catalog-table">
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Nombre Especialidad</th>
+                        <th>Duración</th>
+                        <th>Tipo Aprobación</th>
+                        <th>Estado</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {specialties.map(spec => (
+                        <tr key={spec.id}>
+                          <td><code>{spec.code}</code></td>
+                          <td><strong>{spec.name}</strong></td>
+                          <td>{spec.appointmentDurationMinutes} min</td>
+                          <td>
+                            {spec.isGeneral ? (
+                              <span className="badge-active">Inmediata (General)</span>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 600 }}>Requiere Aprobación Admin</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={spec.active ? 'badge-active' : 'badge-inactive'}>
+                              {spec.active ? 'ACTIVA' : 'INACTIVA'}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className={`btn-sm ${spec.active ? 'btn-danger-outline' : 'btn-approve'}`}
+                              onClick={() => void handleToggleSpecialty(spec)}
+                            >
+                              {spec.active ? 'Desactivar' : 'Activar'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h4 style={{ marginTop: '20px' }}>+ Registrar Nueva Especialidad</h4>
+                  <form onSubmit={e => void handleCreateSpecialty(e)} className="booking-form-grid">
+                    <div>
+                      <label>Código (ej: DERMA)</label>
+                      <input required value={newSpecCode} onChange={e => setNewSpecCode(e.target.value)} placeholder="DERMA" />
+                    </div>
+                    <div>
+                      <label>Nombre de la Especialidad</label>
+                      <input required value={newSpecName} onChange={e => setNewSpecName(e.target.value)} placeholder="Dermatología Clínica" />
+                    </div>
+                    <div>
+                      <label>Duración del Turno (minutos)</label>
+                      <input
+                        type="number"
+                        min={15}
+                        max={120}
+                        step={15}
+                        required
+                        value={newSpecDuration}
+                        onChange={e => setNewSpecDuration(Number(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '24px' }}>
+                        <input
+                          type="checkbox"
+                          style={{ width: 'auto' }}
+                          checked={newSpecIsGeneral}
+                          onChange={e => setNewSpecIsGeneral(e.target.checked)}
+                        />
+                        <span>¿Es Medicina General? (Aprobación Inmediata)</span>
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                      <button type="submit" className="primary-button" style={{ margin: 0 }} disabled={busy}>
+                        + Crear Especialidad
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* 7. AGENDA PROFESIONAL */}
             {tab === 'prof-agenda' && isProf && (
               <div>
                 <div className="portal-header">
@@ -1132,7 +1935,7 @@ function App() {
               </div>
             )}
 
-            {/* 5. GESTIONAR BLOQUES / DISPONIBILIDAD */}
+            {/* 8. GESTIONAR BLOQUES / DISPONIBILIDAD */}
             {tab === 'prof-blocks' && isProf && (
               <div>
                 <div className="portal-header">
@@ -1216,7 +2019,7 @@ function App() {
               </div>
             )}
 
-            {/* 6. DIRECTORIO MÉDICO & GESTIÓN ADMIN */}
+            {/* 9. DIRECTORIO MÉDICO & GESTIÓN ADMIN */}
             {tab === 'professionals' && (
               <div>
                 <div className="portal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
@@ -1367,7 +2170,7 @@ function App() {
         </div>
       )}
 
-      {/* Modal Rechazo Admin */}
+      {/* Modal Rechazo Admin Citas */}
       {rejectModalAppId && (
         <div className="modal-overlay" role="dialog" aria-modal="true">
           <div className="modal-dialog">
@@ -1397,6 +2200,178 @@ function App() {
                 Confirmar Rechazo
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reprogramación de Cita (Paciente - RF-15) */}
+      {rescheduleModalApp && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-dialog">
+            <h3>Solicitud de Reprogramación</h3>
+            <p style={{ fontSize: '13px', color: '#64756e' }}>
+              Indica la nueva fecha y hora tentativa en la que deseas atender tu cita ({rescheduleModalApp.specialtyName} con {rescheduleModalApp.professionalName}).
+            </p>
+            <form onSubmit={e => void handleSendReschedule(e)}>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600 }}>Nueva Fecha Deseada</label>
+                  <input
+                    type="date"
+                    required
+                    value={rescheduleDate}
+                    onChange={e => setRescheduleDate(e.target.value)}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600 }}>Nueva Hora Deseada</label>
+                  <input
+                    type="time"
+                    required
+                    value={rescheduleTime}
+                    onChange={e => setRescheduleTime(e.target.value)}
+                  />
+                </div>
+              </div>
+              <label style={{ fontSize: '12px', fontWeight: 600 }}>Motivo de la reprogramación:</label>
+              <textarea
+                required
+                placeholder="Ej: Compromiso laboral imprevisto o viaje programado..."
+                value={rescheduleReason}
+                onChange={e => setRescheduleReason(e.target.value)}
+              />
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn-sm btn-secondary"
+                  onClick={() => setRescheduleModalApp(null)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn-sm btn-approve"
+                  disabled={busy}
+                >
+                  Enviar Solicitud
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Rechazo Reprogramación Admin */}
+      {rejectRescheduleId && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-dialog">
+            <h3>Motivo de Rechazo de Reprogramación</h3>
+            <p style={{ fontSize: '13px', color: '#64756e' }}>
+              Indica el motivo por el cual no es posible aceptar el cambio de horario propuesto por el paciente.
+            </p>
+            <textarea
+              required
+              placeholder="Ej: El médico no cuenta con turnos disponibles en ese horario..."
+              value={rescheduleRejectReason}
+              onChange={e => setRescheduleRejectReason(e.target.value)}
+            />
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-sm btn-secondary"
+                onClick={() => setRejectRescheduleId(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-sm btn-reject"
+                onClick={() => void handleRejectReschedule()}
+                disabled={busy}
+              >
+                Confirmar Rechazo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Recuperación de Contraseña (RF-03, HU-007) */}
+      {showResetModal && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-dialog">
+            <h3>Recuperación de Contraseña</h3>
+            {resetStep === 1 ? (
+              <form onSubmit={e => void handleRequestReset(e)}>
+                <p style={{ fontSize: '13px', color: '#64756e' }}>
+                  Ingresa tu correo electrónico registrado. En este entorno de laboratorio se generará un token de recuperación sintético.
+                </p>
+                <label>Correo electrónico</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="paciente@fcv.test"
+                  value={resetEmail}
+                  onChange={e => setResetEmail(e.target.value)}
+                />
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-sm btn-secondary"
+                    onClick={() => setShowResetModal(false)}
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    style={{ margin: 0, width: 'auto' }}
+                    disabled={busy}
+                  >
+                    Generar Token ↗
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={e => void handleConfirmReset(e)}>
+                <p style={{ fontSize: '13px', color: '#64756e' }}>
+                  Ingresa el token de verificación y define tu nueva contraseña segura.
+                </p>
+                <label>Token de Recuperación</label>
+                <input
+                  required
+                  value={resetToken}
+                  onChange={e => setResetToken(e.target.value)}
+                  placeholder="Token de 36 caracteres..."
+                />
+                <label>Nueva Contraseña</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  placeholder="••••••••"
+                  value={newResetPassword}
+                  onChange={e => setNewResetPassword(e.target.value)}
+                />
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-sm btn-secondary"
+                    onClick={() => setResetStep(1)}
+                  >
+                    Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    className="primary-button"
+                    style={{ margin: 0, width: 'auto' }}
+                    disabled={busy}
+                  >
+                    ✓ Restablecer Contraseña
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
